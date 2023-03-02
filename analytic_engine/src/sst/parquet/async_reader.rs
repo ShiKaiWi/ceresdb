@@ -264,11 +264,19 @@ impl<'a> Reader<'a> {
     }
 
     async fn read_sst_meta(&self) -> Result<MetaData> {
+        let start = Instant::now();
         if let Some(cache) = &self.meta_cache {
             if let Some(meta_data) = cache.get(self.path.as_ref()) {
+                info!(
+                    "meta_data finished loading from cache, path:{}, cost:{:?}",
+                    self.path,
+                    start.elapsed()
+                );
                 return Ok(meta_data);
             }
         }
+
+        info!("meta_data not found in cache, path:{}", self.path);
 
         // The metadata can't be found in the cache, and let's fetch it from the
         // storage.
@@ -480,6 +488,7 @@ impl Stream for RecordBatchProjector {
                 {
                     Err(e) => Poll::Ready(Some(Err(e))),
                     Ok(record_batch) => {
+                        let start = Instant::now();
                         let parquet_decoder =
                             ParquetDecoder::new(projector.storage_format_opts.clone());
                         let record_batch = parquet_decoder
@@ -494,6 +503,12 @@ impl Stream for RecordBatchProjector {
                             .project_to_record_batch_with_key(record_batch)
                             .map_err(|e| Box::new(e) as _)
                             .context(DecodeRecordBatch {});
+
+                        info!(
+                            "projected one batch, cost:{:?}, path:{}",
+                            start.elapsed(),
+                            projector.path
+                        );
 
                         Poll::Ready(Some(projected_batch))
                     }
@@ -533,12 +548,16 @@ struct RecordBatchReceiver {
     cur_rx_idx: usize,
     #[allow(dead_code)]
     drop_helper: AbortOnDropMany<()>,
+    prev_ts: Instant,
 }
 
 impl Stream for RecordBatchReceiver {
     type Item = Result<RecordBatchWithKey>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        info!("poll_next start, prev_ts:{:?}", self.prev_ts.elapsed());
+        self.prev_ts = Instant::now();
+
         if self.rx_group.is_empty() {
             return Poll::Ready(None);
         }
@@ -553,7 +572,14 @@ impl Stream for RecordBatchReceiver {
                 cur_rx_idx, rx_group_len
             )
         });
+        let start = Instant::now();
         let poll_result = cur_rx.poll_recv(cx);
+        info!(
+            "poll_recv cost:{:?}, cur_rx_idx:{}, rx_group len:{}",
+            start.elapsed(),
+            cur_rx_idx,
+            rx_group_len
+        );
 
         match poll_result {
             Poll::Ready(result) => {
@@ -639,6 +665,7 @@ impl<'a> SstReader for ThreadedReader<'a> {
                 rx_group: Vec::new(),
                 cur_rx_idx: 0,
                 drop_helper: AbortOnDropMany(Vec::new()),
+                prev_ts: Instant::now(),
             }) as _);
         }
 
@@ -664,6 +691,7 @@ impl<'a> SstReader for ThreadedReader<'a> {
             rx_group,
             cur_rx_idx: 0,
             drop_helper: AbortOnDropMany(handles),
+            prev_ts: Instant::now(),
         }) as _)
     }
 }
