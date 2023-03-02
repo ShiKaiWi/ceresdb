@@ -549,13 +549,18 @@ struct RecordBatchReceiver {
     #[allow(dead_code)]
     drop_helper: AbortOnDropMany<()>,
     prev_ts: Instant,
+    prev_pending: bool,
 }
 
 impl Stream for RecordBatchReceiver {
     type Item = Result<RecordBatchWithKey>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        info!("poll_next start, prev_ts:{:?}", self.prev_ts.elapsed());
+        info!(
+            "poll_next start, prev_ts:{:?}, prev_is_pending:{}",
+            self.prev_ts.elapsed(),
+            self.prev_pending
+        );
         self.prev_ts = Instant::now();
 
         if self.rx_group.is_empty() {
@@ -581,6 +586,7 @@ impl Stream for RecordBatchReceiver {
             rx_group_len,
             matches!(poll_result, Poll::Pending),
         );
+        self.prev_pending = matches!(poll_result, Poll::Pending);
 
         match poll_result {
             Poll::Ready(result) => {
@@ -672,6 +678,7 @@ impl<'a> SstReader for ThreadedReader<'a> {
                 cur_rx_idx: 0,
                 drop_helper: AbortOnDropMany(Vec::new()),
                 prev_ts: Instant::now(),
+                prev_pending: false,
             }) as _);
         }
 
@@ -698,6 +705,7 @@ impl<'a> SstReader for ThreadedReader<'a> {
             cur_rx_idx: 0,
             drop_helper: AbortOnDropMany(handles),
             prev_ts: Instant::now(),
+            prev_pending: false,
         }) as _)
     }
 }
