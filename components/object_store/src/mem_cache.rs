@@ -10,7 +10,7 @@ use std::{
     hash::{Hash, Hasher},
     num::NonZeroUsize,
     ops::Range,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use async_trait::async_trait;
@@ -18,7 +18,7 @@ use bytes::Bytes;
 use clru::{CLruCache, CLruCacheConfig, WeightScale};
 use futures::stream::BoxStream;
 use snafu::{OptionExt, Snafu};
-use tokio::{io::AsyncWrite, sync::Mutex};
+use tokio::io::AsyncWrite;
 use upstream::{path::Path, GetResult, ListResult, MultipartId, ObjectMeta, ObjectStore, Result};
 
 use crate::ObjectStoreRef;
@@ -53,25 +53,25 @@ impl Partition {
 
 impl Partition {
     async fn get(&self, key: &str) -> Option<Bytes> {
-        let mut guard = self.inner.lock().await;
+        let mut guard = self.inner.lock().unwrap();
         guard.get(key).cloned()
     }
 
     async fn peek(&self, key: &str) -> Option<Bytes> {
         // FIXME: actually, here write lock is not necessary.
-        let guard = self.inner.lock().await;
+        let guard = self.inner.lock().unwrap();
         guard.peek(key).cloned()
     }
 
     async fn insert(&self, key: String, value: Bytes) {
-        let mut guard = self.inner.lock().await;
+        let mut guard = self.inner.lock().unwrap();
         // don't care error now.
         _ = guard.put_with_weight(key, value);
     }
 
     #[cfg(test)]
     async fn keys(&self) -> Vec<String> {
-        let guard = self.inner.lock().await;
+        let guard = self.inner.lock().unwrap();
         guard
             .iter()
             .map(|(key, _)| key)

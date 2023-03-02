@@ -355,6 +355,7 @@ impl ParallelismOptions {
 struct ReaderMetrics {
     bytes_scanned: usize,
     sst_get_range_length_histogram: LocalHistogram,
+    sst_get_range_duration_histogram: LocalHistogram,
 }
 
 #[derive(Clone)]
@@ -374,6 +375,7 @@ impl ObjectStoreReader {
             metrics: ReaderMetrics {
                 bytes_scanned: 0,
                 sst_get_range_length_histogram: metrics::SST_GET_RANGE_HISTOGRAM.local(),
+                sst_get_range_duration_histogram: metrics::SST_GET_DURATION_HISTOGRAM.local(),
             },
         }
     }
@@ -387,6 +389,7 @@ impl Drop for ObjectStoreReader {
 
 impl AsyncFileReader for ObjectStoreReader {
     fn get_bytes(&mut self, range: Range<usize>) -> BoxFuture<'_, parquet::errors::Result<Bytes>> {
+        let _timer = self.metrics.sst_get_range_duration_histogram.start_timer();
         self.metrics.bytes_scanned += range.end - range.start;
         self.metrics
             .sst_get_range_length_histogram
@@ -407,6 +410,8 @@ impl AsyncFileReader for ObjectStoreReader {
         &mut self,
         ranges: Vec<Range<usize>>,
     ) -> BoxFuture<'_, parquet::errors::Result<Vec<Bytes>>> {
+        let _timer = self.metrics.sst_get_range_duration_histogram.start_timer();
+
         for range in &ranges {
             self.metrics.bytes_scanned += range.end - range.start;
             self.metrics
