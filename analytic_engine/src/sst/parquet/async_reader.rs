@@ -638,10 +638,15 @@ impl<'a> ThreadedReader<'a> {
         tx: Sender<Result<RecordBatchWithKey>>,
     ) -> JoinHandle<()> {
         self.runtime.spawn(async move {
+            let mut start = Instant::now();
             while let Some(batch) = reader.next().await {
+                info!("read one batch, cost:{:?}", start.elapsed());
                 if let Err(e) = tx.send(batch).await {
+                    info!("finish send a batch, cost:{:?}", start.elapsed());
                     error!("fail to send the fetched record batch result, err:{}", e);
                 }
+
+                start = Instant::now();
             }
         })
     }
