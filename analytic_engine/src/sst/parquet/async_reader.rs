@@ -575,10 +575,11 @@ impl Stream for RecordBatchReceiver {
         let start = Instant::now();
         let poll_result = cur_rx.poll_recv(cx);
         info!(
-            "poll_recv cost:{:?}, cur_rx_idx:{}, rx_group len:{}",
+            "poll_recv cost:{:?}, cur_rx_idx:{}, rx_group len:{}, is_pending:{}",
             start.elapsed(),
             cur_rx_idx,
-            rx_group_len
+            rx_group_len,
+            matches!(poll_result, Poll::Pending),
         );
 
         match poll_result {
