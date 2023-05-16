@@ -2,7 +2,11 @@
 
 //! Table implementation
 
-use std::{collections::HashMap, fmt, sync::Mutex};
+use std::{
+    collections::HashMap,
+    fmt,
+    sync::{Arc, Mutex},
+};
 
 use async_trait::async_trait;
 use common_types::{
@@ -62,7 +66,7 @@ pub struct TableImpl {
     table_data: TableDataRef,
 
     /// Buffer for written rows.
-    pending_writes: Mutex<PendingWriteQueue>,
+    pending_writes: Arc<Mutex<PendingWriteQueue>>,
 }
 
 impl TableImpl {
@@ -74,7 +78,9 @@ impl TableImpl {
         table_data: TableDataRef,
         space_table: SpaceAndTable,
     ) -> Self {
-        let pending_writes = Mutex::new(PendingWriteQueue::new(instance.max_rows_in_write_queue));
+        let pending_writes = Arc::new(Mutex::new(PendingWriteQueue::new(
+            instance.max_rows_in_write_queue,
+        )));
 
         Self {
             space_table,
@@ -128,20 +134,11 @@ impl PendingWrites {
             return QueueResult::Reject(request);
         }
 
-        // For the first pending writes, don't provide the receiver because it should do
-        // the write for the pending writes and no need to wait for the notification.
-        let res = if self.is_empty() {
-            QueueResult::First
-        } else {
-            let (tx, rx) = oneshot::channel();
-            self.notifiers.push(tx);
-            QueueResult::Waiter(rx)
-        };
-
         self.num_rows += request.row_group.num_rows();
         self.writes.push(request);
-
-        res
+        let (tx, rx) = oneshot::channel();
+        self.notifiers.push(tx);
+        QueueResult::Waiter(rx)
     }
 
     /// Check if the schema of the request is the same as the schema of the
@@ -168,8 +165,6 @@ enum QueueResult {
     /// This request is rejected because the queue is full or the schema is
     /// different.
     Reject(WriteRequest),
-    /// This request is the first one in the queue.
-    First,
     /// This request is pushed into the queue and the caller should wait for the
     /// finish notification.
     Waiter(Receiver<Result<()>>),
@@ -239,6 +234,69 @@ fn merge_pending_write_requests(
 }
 
 impl TableImpl {
+    fn trigger_flush_pending_queue(
+        instance: InstanceRef,
+        space_table: SpaceAndTable,
+        pending_queue: Arc<Mutex<PendingWriteQueue>>,
+    ) {
+        let runtime = instance.runtimes.write_runtime.clone();
+        let _ = runtime.spawn(async move {
+            let table_data = space_table.table_data();
+            let mut serial_exec = match table_data.serial_exec.try_lock() {
+                Ok(v) => v,
+                Err(_) => return,
+            };
+
+            let mut writer = Writer::new(instance.clone(), space_table.clone(), &mut serial_exec);
+            let pending_writes = {
+                let mut pending_queue = pending_queue.lock().unwrap();
+                pending_queue.take_pending_writes()
+            };
+            if pending_writes.is_empty() || pending_writes.notifiers.is_empty() {
+                return;
+            }
+            let merged_write_request =
+                merge_pending_write_requests(pending_writes.writes, pending_writes.num_rows);
+
+            let write_res = writer
+                .write(merged_write_request)
+                .await
+                .box_err()
+                .context(Write {
+                    table: &table_data.name,
+                });
+
+            // Notify the waiters for the pending writes.
+            match write_res {
+                Ok(_) => {
+                    for notifier in pending_writes.notifiers {
+                        if notifier.send(Ok(())).is_err() {
+                            warn!(
+                                "Failed to notify the ok result of pending writes, table:{}",
+                                table_data.name,
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    let err_msg = format!("Failed to do merge write, err:{e}");
+                    for notifier in pending_writes.notifiers {
+                        let err = MergeWrite { msg: &err_msg }.fail();
+                        if notifier.send(err).is_err() {
+                            warn!(
+                                "Failed to notify the error result of pending writes, table:{}",
+                                table_data.name,
+                            );
+                        }
+                    }
+                }
+            };
+
+            // Trigger next flush.
+            Self::trigger_flush_pending_queue(instance, space_table.clone(), pending_queue);
+        });
+    }
+
     /// Perform table write with pending queue.
     ///
     /// The writes will be put into the pending queue first. And the writer who
@@ -255,27 +313,13 @@ impl TableImpl {
             let mut pending_queue = self.pending_writes.lock().unwrap();
             pending_queue.try_push(request)
         };
-        let (request, mut serial_exec, notifiers) = match queue_res {
-            QueueResult::First => {
-                // This is the first request in the queue, and we should
-                // take responsibilities for merging and writing the
-                // requests in the queue.
-                let serial_exec = self.table_data.serial_exec.lock().await;
-                // The `serial_exec` is acquired, let's merge the pending requests and write
-                // them all.
-                let pending_writes = {
-                    let mut pending_queue = self.pending_writes.lock().unwrap();
-                    pending_queue.take_pending_writes()
-                };
-                assert!(
-                    !pending_writes.is_empty(),
-                    "The pending writes should contain at least the one just pushed."
-                );
-                let merged_write_request =
-                    merge_pending_write_requests(pending_writes.writes, pending_writes.num_rows);
-                (merged_write_request, serial_exec, pending_writes.notifiers)
-            }
+        match queue_res {
             QueueResult::Waiter(rx) => {
+                Self::trigger_flush_pending_queue(
+                    self.instance.clone(),
+                    self.space_table.clone(),
+                    self.pending_writes.clone(),
+                );
                 // The request is successfully pushed into the queue, and just wait for the
                 // write result.
                 match rx.await {
@@ -296,50 +340,6 @@ impl TableImpl {
                 return TooManyPendingWrites { table: self.name() }.fail();
             }
         };
-
-        let mut writer = Writer::new(
-            self.instance.clone(),
-            self.space_table.clone(),
-            &mut serial_exec,
-        );
-        let write_res = writer
-            .write(request)
-            .await
-            .box_err()
-            .context(Write { table: self.name() });
-
-        // There is no waiter for pending writes, return the write result.
-        if notifiers.is_empty() {
-            return write_res;
-        }
-
-        // Notify the waiters for the pending writes.
-        match write_res {
-            Ok(_) => {
-                for notifier in notifiers {
-                    if notifier.send(Ok(())).is_err() {
-                        warn!(
-                            "Failed to notify the ok result of pending writes, table:{}",
-                            self.name()
-                        );
-                    }
-                }
-                Ok(num_rows)
-            }
-            Err(e) => {
-                let err_msg = format!("Failed to do merge write, err:{e}");
-                for notifier in notifiers {
-                    let err = MergeWrite { msg: &err_msg }.fail();
-                    if notifier.send(err).is_err() {
-                        warn!(
-                            "Failed to notify the error result of pending writes, table:{}",
-                            self.name()
-                        );
-                    }
-                }
-                Err(e)
-            }
-        }
     }
 
     #[inline]
