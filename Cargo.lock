@@ -88,6 +88,7 @@ dependencies = [
  "ceresdbproto",
  "common_types",
  "common_util",
+ "crossbeam-queue",
  "datafusion",
  "env_logger",
  "futures 0.3.28",

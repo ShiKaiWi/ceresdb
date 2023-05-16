@@ -2,11 +2,7 @@
 
 //! Table implementation
 
-use std::{
-    collections::HashMap,
-    fmt,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, fmt, sync::Arc};
 
 use async_trait::async_trait;
 use common_types::{
@@ -15,6 +11,7 @@ use common_types::{
     time::TimeRange,
 };
 use common_util::error::BoxError;
+use crossbeam_queue::SegQueue;
 use datafusion::{common::Column, logical_expr::Expr};
 use futures::TryStreamExt;
 use log::{error, warn};
@@ -66,7 +63,7 @@ pub struct TableImpl {
     table_data: TableDataRef,
 
     /// Buffer for written rows.
-    pending_writes: Arc<Mutex<PendingWriteQueue>>,
+    pending_write_queue: Arc<PendingWriteQueue>,
 }
 
 impl TableImpl {
@@ -78,9 +75,8 @@ impl TableImpl {
         table_data: TableDataRef,
         space_table: SpaceAndTable,
     ) -> Self {
-        let pending_writes = Arc::new(Mutex::new(PendingWriteQueue::new(
-            instance.max_rows_in_write_queue,
-        )));
+        let pending_write_queue =
+            Arc::new(PendingWriteQueue::new(instance.max_rows_in_write_queue));
 
         Self {
             space_table,
@@ -89,7 +85,7 @@ impl TableImpl {
             space_id,
             table_id,
             table_data,
-            pending_writes,
+            pending_write_queue,
         }
     }
 }
@@ -109,54 +105,39 @@ struct PendingWriteQueue {
     pending_writes: PendingWrites,
 }
 
+struct RequestWithNotifier {
+    req: WriteRequest,
+    notifier: Sender<Result<()>>,
+}
+
 /// The underlying queue for buffering pending write requests.
 #[derive(Default)]
 struct PendingWrites {
-    writes: Vec<WriteRequest>,
-    notifiers: Vec<Sender<Result<()>>>,
-    num_rows: usize,
+    queue: SegQueue<RequestWithNotifier>,
 }
 
 impl PendingWrites {
-    pub fn with_capacity(cap: usize) -> Self {
-        Self {
-            writes: Vec::with_capacity(cap),
-            notifiers: Vec::with_capacity(cap),
-            num_rows: 0,
-        }
-    }
-
     /// Try to push the request into the pending queue.
     ///
     /// This push will be rejected if the schema is different.
-    fn try_push(&mut self, request: WriteRequest) -> QueueResult {
-        if !self.is_same_schema(request.row_group.schema()) {
-            return QueueResult::Reject(request);
-        }
-
-        self.num_rows += request.row_group.num_rows();
-        self.writes.push(request);
+    fn try_push(&self, req: WriteRequest) -> QueueResult {
         let (tx, rx) = oneshot::channel();
-        self.notifiers.push(tx);
+        let req_with_notifier = RequestWithNotifier { req, notifier: tx };
+        self.queue.push(req_with_notifier);
+
         QueueResult::Waiter(rx)
     }
 
-    /// Check if the schema of the request is the same as the schema of the
-    /// pending write requests.
-    ///
-    /// Return true if the pending write requests is empty.
-    fn is_same_schema(&self, schema: &Schema) -> bool {
-        if self.is_empty() {
-            return true;
+    fn take_requests_and_notifiers(&self) -> (Vec<WriteRequest>, Vec<Sender<Result<()>>>) {
+        let num_reqs = self.queue.len();
+        let mut requests = Vec::with_capacity(num_reqs);
+        let mut notifiers = Vec::with_capacity(num_reqs);
+        while let Some(v) = self.queue.pop() {
+            requests.push(v.req);
+            notifiers.push(v.notifier);
         }
 
-        let request = &self.writes[0];
-        schema.version() == request.row_group.schema().version()
-    }
-
-    #[inline]
-    fn is_empty(&self) -> bool {
-        self.writes.is_empty()
+        (requests, notifiers)
     }
 }
 
@@ -183,7 +164,7 @@ impl PendingWriteQueue {
     /// If the queue is full or the schema is different, return the request
     /// back. Otherwise, return a receiver to let the caller wait for the write
     /// result.
-    fn try_push(&mut self, request: WriteRequest) -> QueueResult {
+    fn try_push(&self, request: WriteRequest) -> QueueResult {
         if self.is_full() {
             return QueueResult::Reject(request);
         }
@@ -193,15 +174,12 @@ impl PendingWriteQueue {
 
     #[inline]
     fn is_full(&self) -> bool {
-        self.pending_writes.num_rows >= self.max_rows
+        self.pending_writes.queue.len() >= self.max_rows
     }
 
     /// Clear the pending writes and reset the number of rows.
-    fn take_pending_writes(&mut self) -> PendingWrites {
-        let curr_num_reqs = self.pending_writes.writes.len();
-        let new_cap = curr_num_reqs / ADDITIONAL_PENDING_WRITE_CAP_RATIO + curr_num_reqs;
-        let new_pending_writes = PendingWrites::with_capacity(new_cap);
-        std::mem::replace(&mut self.pending_writes, new_pending_writes)
+    fn take_pending_writes(&self) -> (Vec<WriteRequest>, Vec<Sender<Result<()>>>) {
+        self.pending_writes.take_requests_and_notifiers()
     }
 }
 
@@ -237,7 +215,7 @@ impl TableImpl {
     fn trigger_flush_pending_queue(
         instance: InstanceRef,
         space_table: SpaceAndTable,
-        pending_queue: Arc<Mutex<PendingWriteQueue>>,
+        pending_queue: Arc<PendingWriteQueue>,
     ) {
         let runtime = instance.runtimes.write_runtime.clone();
         let _ = runtime.spawn(async move {
@@ -248,15 +226,12 @@ impl TableImpl {
             };
 
             let mut writer = Writer::new(instance.clone(), space_table.clone(), &mut serial_exec);
-            let pending_writes = {
-                let mut pending_queue = pending_queue.lock().unwrap();
-                pending_queue.take_pending_writes()
-            };
-            if pending_writes.is_empty() || pending_writes.notifiers.is_empty() {
+            let (pending_writes, notifiers) = pending_queue.take_pending_writes();
+            if pending_writes.is_empty() || notifiers.is_empty() {
                 return;
             }
-            let merged_write_request =
-                merge_pending_write_requests(pending_writes.writes, pending_writes.num_rows);
+            let total_rows = pending_writes.iter().map(|v| v.row_group.num_rows()).sum();
+            let merged_write_request = merge_pending_write_requests(pending_writes, total_rows);
 
             let write_res = writer
                 .write(merged_write_request)
@@ -269,7 +244,7 @@ impl TableImpl {
             // Notify the waiters for the pending writes.
             match write_res {
                 Ok(_) => {
-                    for notifier in pending_writes.notifiers {
+                    for notifier in notifiers {
                         if notifier.send(Ok(())).is_err() {
                             warn!(
                                 "Failed to notify the ok result of pending writes, table:{}",
@@ -280,7 +255,7 @@ impl TableImpl {
                 }
                 Err(e) => {
                     let err_msg = format!("Failed to do merge write, err:{e}");
-                    for notifier in pending_writes.notifiers {
+                    for notifier in notifiers {
                         let err = MergeWrite { msg: &err_msg }.fail();
                         if notifier.send(err).is_err() {
                             warn!(
@@ -309,16 +284,13 @@ impl TableImpl {
 
         // Failed to acquire the serial_exec, put the request into the
         // pending queue.
-        let queue_res = {
-            let mut pending_queue = self.pending_writes.lock().unwrap();
-            pending_queue.try_push(request)
-        };
+        let queue_res = self.pending_write_queue.try_push(request);
         match queue_res {
             QueueResult::Waiter(rx) => {
                 Self::trigger_flush_pending_queue(
                     self.instance.clone(),
                     self.space_table.clone(),
-                    self.pending_writes.clone(),
+                    self.pending_write_queue.clone(),
                 );
                 // The request is successfully pushed into the queue, and just wait for the
                 // write result.

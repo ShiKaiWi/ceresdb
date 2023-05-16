@@ -25,6 +25,7 @@ bytes = { workspace = true }
 ceresdbproto = { workspace = true }
 common_types = { workspace = true }
 common_util = { workspace = true }
+crossbeam-queue = "0.3"
 datafusion = { workspace = true }
 futures = { workspace = true }
 lazy_static = { workspace = true }
