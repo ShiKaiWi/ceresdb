@@ -308,6 +308,9 @@ impl TableImpl {
             .box_err()
             .context(Write { table: self.name() });
 
+        // Release the serial exec lock before notify.
+        drop(serial_exec);
+
         // There is no waiter for pending writes, return the write result.
         if notifiers.is_empty() {
             return write_res;
