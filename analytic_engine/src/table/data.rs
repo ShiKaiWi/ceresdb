@@ -150,7 +150,7 @@ pub struct TableData {
     pub shard_info: TableShardInfo,
 
     /// The table operation serial_exec
-    pub serial_exec: tokio::sync::Mutex<TableOpSerialExecutor>,
+    serial_exec: tokio::sync::Mutex<TableOpSerialExecutor>,
 }
 
 impl fmt::Debug for TableData {
@@ -237,6 +237,31 @@ impl TableData {
             shard_info: TableShardInfo::new(shard_id),
             serial_exec: tokio::sync::Mutex::new(TableOpSerialExecutor::new(table_id)),
         })
+    }
+
+    pub async fn acquire_serial_exec_lock(
+        &self,
+        reason: &str,
+    ) -> tokio::sync::MutexGuard<TableOpSerialExecutor> {
+        info!("Begin acquire lock of table:{}, reason:{reason}", self.name);
+        let guard = self.serial_exec.lock().await;
+        info!("Acquired lock of table:{}, reason:{reason}", self.name);
+
+        guard
+    }
+
+    pub fn try_acquire_serial_exec_lock(
+        &self,
+        reason: &str,
+    ) -> Option<tokio::sync::MutexGuard<TableOpSerialExecutor>> {
+        info!(
+            "Begin try acquire lock of table:{}, reason:{reason}",
+            self.name
+        );
+        let guard = self.serial_exec.try_lock().map(|v| Some(v)).unwrap_or(None);
+        info!("Acquired try lock of table:{}, reason:{reason}", self.name);
+
+        guard
     }
 
     /// Recover table from add table meta

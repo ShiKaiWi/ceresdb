@@ -650,7 +650,7 @@ impl ScheduleWorker {
             if last_flush_time + self.max_unflushed_duration.as_millis_u64()
                 > common_util::time::current_time_millis()
             {
-                let mut serial_exec = table_data.serial_exec.lock().await;
+                let mut serial_exec = table_data.acquire_serial_exec_lock("flush_table_bg").await;
                 let flush_scheduler = serial_exec.flush_scheduler();
                 // Instance flush the table asynchronously.
                 if let Err(e) = flusher

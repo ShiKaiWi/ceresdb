@@ -193,7 +193,7 @@ impl Instance {
         };
 
         let flusher = self.make_flusher();
-        let mut serial_exec = table_data.serial_exec.lock().await;
+        let mut serial_exec = table_data.acquire_serial_exec_lock("manual_flush").await;
         let flush_scheduler = serial_exec.flush_scheduler();
         flusher
             .schedule_flush(flush_scheduler, table_data, flush_opts)

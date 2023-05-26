@@ -264,7 +264,10 @@ impl TableImpl {
                     "Try to acquire lock for write, table:{}, table_id:{}, num_rows:{num_rows}",
                     self.table_data.name, self.table_data.id,
                 );
-                let serial_exec = self.table_data.serial_exec.lock().await;
+                let serial_exec = self
+                    .table_data
+                    .acquire_serial_exec_lock("pending-write")
+                    .await;
                 info!(
                     "Acquired lock for write, table:{}, table_id:{}, num_rows:{num_rows}",
                     self.table_data.name, self.table_data.id,
@@ -398,7 +401,10 @@ impl Table for TableImpl {
             return self.write_with_pending_queue(request).await;
         }
 
-        let mut serial_exec = self.table_data.serial_exec.lock().await;
+        let mut serial_exec = self
+            .table_data
+            .acquire_serial_exec_lock("no_pending_write")
+            .await;
         let mut writer = Writer::new(
             self.instance.clone(),
             self.space_table.clone(),
@@ -515,7 +521,10 @@ impl Table for TableImpl {
     }
 
     async fn alter_schema(&self, request: AlterSchemaRequest) -> Result<usize> {
-        let mut serial_exec = self.table_data.serial_exec.lock().await;
+        let mut serial_exec = self
+            .table_data
+            .acquire_serial_exec_lock("alter-schema")
+            .await;
         let mut alterer = Alterer::new(
             self.table_data.clone(),
             &mut serial_exec,
@@ -532,7 +541,10 @@ impl Table for TableImpl {
     }
 
     async fn alter_options(&self, options: HashMap<String, String>) -> Result<usize> {
-        let mut serial_exec = self.table_data.serial_exec.lock().await;
+        let mut serial_exec = self
+            .table_data
+            .acquire_serial_exec_lock("alter-options")
+            .await;
         let alterer = Alterer::new(
             self.table_data.clone(),
             &mut serial_exec,

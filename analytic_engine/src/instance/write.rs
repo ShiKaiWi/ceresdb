@@ -610,8 +610,8 @@ impl<'a> Writer<'a> {
             "Try to trigger flush of other table:{} from the write procedure of table:{}",
             table_data.name, self.table_data.name
         );
-        match table_data.serial_exec.try_lock() {
-            Ok(mut serial_exec) => {
+        match table_data.try_acquire_serial_exec_lock("other_flush") {
+            Some(mut serial_exec) => {
                 let flush_scheduler = serial_exec.flush_scheduler();
                 // Set `block_on_write_thread` to false and let flush do in background.
                 flusher
@@ -621,7 +621,7 @@ impl<'a> Writer<'a> {
                         table: &table_data.name,
                     })
             }
-            Err(_) => {
+            None => {
                 warn!(
                     "Failed to acquire write lock for flush table:{}",
                     table_data.name,

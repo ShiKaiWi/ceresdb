@@ -229,7 +229,7 @@ impl Instance {
             .await
             .context(ReadWal)?;
 
-        let mut serial_exec = table_data.serial_exec.lock().await;
+        let mut serial_exec = table_data.acquire_serial_exec_lock("open_table").await;
         let mut log_entry_buf = VecDeque::with_capacity(replay_batch_size);
         loop {
             // fetch entries to log_entry_buf

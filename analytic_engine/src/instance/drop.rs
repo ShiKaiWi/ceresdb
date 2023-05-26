@@ -36,7 +36,7 @@ impl Dropper {
             }
         };
 
-        let mut serial_exec = table_data.serial_exec.lock().await;
+        let mut serial_exec = table_data.acquire_serial_exec_lock("drop_table").await;
 
         if table_data.is_dropped() {
             warn!(
