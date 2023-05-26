@@ -13,7 +13,7 @@ use common_types::{
 use common_util::error::BoxError;
 use datafusion::{common::Column, logical_expr::Expr};
 use futures::TryStreamExt;
-use log::{error, warn};
+use log::{error, info, warn};
 use snafu::{ensure, OptionExt, ResultExt};
 use table_engine::{
     partition::PartitionInfo,
@@ -260,7 +260,15 @@ impl TableImpl {
                 // This is the first request in the queue, and we should
                 // take responsibilities for merging and writing the
                 // requests in the queue.
+                info!(
+                    "Try to acquire lock for write, table:{}, num_rows:{num_rows}",
+                    self.table_data.name,
+                );
                 let serial_exec = self.table_data.serial_exec.lock().await;
+                info!(
+                    "Acquired lock for write, table:{}, num_rows:{num_rows}",
+                    self.table_data.name
+                );
                 // The `serial_exec` is acquired, let's merge the pending requests and write
                 // them all.
                 let pending_writes = {
@@ -312,6 +320,10 @@ impl TableImpl {
         drop(serial_exec);
 
         // There is no waiter for pending writes, return the write result.
+        info!(
+            "Finish for write, table:{}, num_rows:{num_rows}",
+            self.table_data.name
+        );
         if notifiers.is_empty() {
             return write_res;
         }
