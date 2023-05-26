@@ -261,13 +261,13 @@ impl TableImpl {
                 // take responsibilities for merging and writing the
                 // requests in the queue.
                 info!(
-                    "Try to acquire lock for write, table:{}, num_rows:{num_rows}",
-                    self.table_data.name,
+                    "Try to acquire lock for write, table:{}, table_id:{}, num_rows:{num_rows}",
+                    self.table_data.name, self.table_data.id,
                 );
                 let serial_exec = self.table_data.serial_exec.lock().await;
                 info!(
-                    "Acquired lock for write, table:{}, num_rows:{num_rows}",
-                    self.table_data.name
+                    "Acquired lock for write, table:{}, table_id:{}, num_rows:{num_rows}",
+                    self.table_data.name, self.table_data.id,
                 );
                 // The `serial_exec` is acquired, let's merge the pending requests and write
                 // them all.
@@ -321,8 +321,8 @@ impl TableImpl {
 
         // There is no waiter for pending writes, return the write result.
         info!(
-            "Finish for write, table:{}, num_rows:{num_rows}",
-            self.table_data.name
+            "Finish for write, table:{}, table_id:{}, num_rows:{num_rows}",
+            self.table_data.name, self.table_data.id,
         );
         if notifiers.is_empty() {
             return write_res;
