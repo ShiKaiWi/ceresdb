@@ -130,19 +130,18 @@ impl SpaceStore {
 pub struct Instance {
     /// Space storage
     space_store: SpaceStoreRef,
-    /// Runtime to execute async tasks.
-    runtimes: Arc<EngineRuntimes>,
     /// Global table options, overwrite mutable options in each table's
     /// TableOptions.
     table_opts: TableOptions,
-
-    // End of write group options.
     file_purger: FilePurgerRef,
     compaction_scheduler: CompactionSchedulerRef,
 
     meta_cache: Option<MetaCacheRef>,
     /// Engine memtable memory usage collector
     mem_usage_collector: Arc<MemUsageCollector>,
+    /// Runtime to execute async tasks
+    pub(crate) runtimes: Arc<EngineRuntimes>,
+    /// Max rows buffered in the write queue
     pub(crate) max_rows_in_write_queue: usize,
     /// Engine write buffer size
     pub(crate) db_write_buffer_size: usize,
