@@ -390,7 +390,7 @@ impl<'a> Iterator for IterRow<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IterCol<'a> {
     rows: &'a Vec<Row>,
     row_index: usize,

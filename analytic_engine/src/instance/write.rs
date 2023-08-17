@@ -15,8 +15,8 @@
 //! Write logic of instance
 
 use bytes_ext::ByteVec;
-use ceresdbproto::{schema as schema_pb, table_requests};
-use codec::row;
+use ceresdbproto::table_requests;
+use codec::columnar::{ColumnarEncoder, EncodeHint};
 use common_types::{
     row::{RowGroup, RowGroupSlicer},
     schema::{IndexInWriterSchema, Schema},
@@ -123,7 +123,7 @@ const MAX_ROWS_TO_WRITE: usize = 10_000_000;
 pub(crate) struct EncodeContext {
     pub row_group: RowGroup,
     pub index_in_writer: IndexInWriterSchema,
-    pub encoded_rows: Vec<ByteVec>,
+    pub encoded_cols: Vec<ByteVec>,
 }
 
 impl EncodeContext {
@@ -131,21 +131,23 @@ impl EncodeContext {
         Self {
             row_group,
             index_in_writer: IndexInWriterSchema::default(),
-            encoded_rows: Vec::new(),
+            encoded_cols: Vec::new(),
         }
     }
 
-    pub fn encode_rows(&mut self, table_schema: &Schema) -> Result<()> {
-        row::encode_row_group_for_wal(
-            &self.row_group,
-            table_schema,
-            &self.index_in_writer,
-            &mut self.encoded_rows,
-        )
-        .context(EncodeRowGroup)?;
+    pub fn encode_cols(&mut self, table_schema: &Schema) -> Result<()> {
+        self.encoded_cols.reserve(table_schema.num_columns());
 
-        assert_eq!(self.row_group.num_rows(), self.encoded_rows.len());
-
+        for col_idx in 0..table_schema.num_columns() {
+            let col_schema = table_schema.column(col_idx);
+            let col_iter = self.row_group.iter_column(col_idx).map(|v| v.as_view());
+            let enc = ColumnarEncoder::new(col_idx as u32);
+            let mut hint = EncodeHint::new(col_schema.data_type);
+            let sz = enc.estimated_encoded_size(col_iter.clone(), &mut hint);
+            let mut buf = Vec::with_capacity(sz);
+            enc.encode(&mut buf, col_iter, &mut hint).unwrap();
+            self.encoded_cols.push(buf);
+        }
         Ok(())
     }
 }
@@ -375,41 +377,23 @@ impl<'a> Writer<'a> {
         {
             let _timer = self.table_data.metrics.start_table_write_encode_timer();
             let schema = self.table_data.schema();
-            encode_ctx.encode_rows(&schema)?;
+            encode_ctx.encode_cols(&schema)?;
         }
 
         let EncodeContext {
             row_group,
             index_in_writer,
-            encoded_rows,
+            encoded_cols,
         } = encode_ctx;
-
         let table_data = self.table_data.clone();
-        let split_res = self.maybe_split_write_request(encoded_rows, &row_group);
-        match split_res {
-            SplitResult::Integrate {
-                encoded_rows,
-                row_group,
-            } => {
-                self.write_table_row_group(&table_data, row_group, index_in_writer, encoded_rows)
-                    .await?;
-            }
-            SplitResult::Splitted {
-                encoded_batches,
-                row_group_batches,
-            } => {
-                for (encoded_rows, row_group) in encoded_batches.into_iter().zip(row_group_batches)
-                {
-                    self.write_table_row_group(
-                        &table_data,
-                        row_group,
-                        index_in_writer.clone(),
-                        encoded_rows,
-                    )
-                    .await?;
-                }
-            }
-        }
+
+        self.write_table_row_group(
+            &table_data,
+            RowGroupSlicer::from(&row_group),
+            index_in_writer,
+            encoded_cols,
+        )
+        .await?;
 
         Ok(row_group.num_rows())
     }
@@ -435,9 +419,9 @@ impl<'a> Writer<'a> {
         table_data: &TableDataRef,
         row_group: RowGroupSlicer<'_>,
         index_in_writer: IndexInWriterSchema,
-        encoded_rows: Vec<ByteVec>,
+        encoded_cols: Vec<ByteVec>,
     ) -> Result<()> {
-        let sequence = self.write_to_wal(encoded_rows).await?;
+        let sequence = self.write_to_wal(encoded_cols).await?;
         let memtable_writer = MemTableWriter::new(table_data.clone(), self.serial_exec);
 
         memtable_writer
@@ -556,7 +540,7 @@ impl<'a> Writer<'a> {
     }
 
     /// Write log_batch into wal, return the sequence number of log_batch.
-    async fn write_to_wal(&self, encoded_rows: Vec<ByteVec>) -> Result<SequenceNumber> {
+    async fn write_to_wal(&self, encoded_cols: Vec<ByteVec>) -> Result<SequenceNumber> {
         let _timer = self.table_data.metrics.start_table_write_wal_timer();
         // Convert into pb
         let write_req_pb = table_requests::WriteRequest {
@@ -564,8 +548,9 @@ impl<'a> Writer<'a> {
             version: 0,
             // Use the table schema instead of the schema in request to avoid schema
             // mismatch during replaying
-            schema: Some(schema_pb::TableSchema::from(&self.table_data.schema())),
-            rows: encoded_rows,
+            schema: None,
+            rows: vec![],
+            cols: encoded_cols,
         };
 
         // Encode payload

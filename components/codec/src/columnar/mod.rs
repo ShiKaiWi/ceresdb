@@ -140,6 +140,7 @@ pub struct ColumnarEncoder {
     bytes_compress_threshold: usize,
 }
 
+#[derive(Debug)]
 /// A hint helps column encoding.
 pub struct EncodeHint {
     pub num_nulls: Option<usize>,
@@ -148,6 +149,14 @@ pub struct EncodeHint {
 }
 
 impl EncodeHint {
+    pub fn new(datum_kind: DatumKind) -> Self {
+        Self {
+            num_datums: None,
+            num_nulls: None,
+            datum_kind,
+        }
+    }
+
     fn compute_num_nulls<'a, I>(&mut self, datums: &I) -> usize
     where
         I: Iterator<Item = DatumView<'a>> + Clone,
