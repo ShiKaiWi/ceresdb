@@ -98,6 +98,8 @@ pub struct Config {
     pub num_streams_to_prefetch: usize,
     /// Max buffer size for writing sst
     pub write_sst_max_buffer_size: ReadableSize,
+    /// The threshold to compress values of a column in wal.
+    pub wal_column_compress_threshold: ReadableSize,
     /// Max retry limit After flush failed
     pub max_retry_flush_limit: usize,
     /// Max bytes per write batch.
@@ -152,6 +154,7 @@ impl Default for Config {
             num_streams_to_prefetch: 2,
             scan_max_record_batches_in_flight: 1024,
             write_sst_max_buffer_size: ReadableSize::mb(10),
+            wal_column_compress_threshold: ReadableSize(256),
             max_retry_flush_limit: 0,
             max_bytes_per_write_batch: None,
             wal: WalStorageConfig::RocksDB(Box::default()),

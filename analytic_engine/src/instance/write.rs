@@ -124,14 +124,16 @@ pub(crate) struct EncodeContext {
     pub row_group: RowGroup,
     pub index_in_writer: IndexInWriterSchema,
     pub encoded_cols: Vec<ByteVec>,
+    pub bytes_compress_threshold: usize,
 }
 
 impl EncodeContext {
-    pub fn new(row_group: RowGroup) -> Self {
+    pub fn new(row_group: RowGroup, bytes_compress_threshold: usize) -> Self {
         Self {
             row_group,
             index_in_writer: IndexInWriterSchema::default(),
             encoded_cols: Vec::new(),
+            bytes_compress_threshold,
         }
     }
 
@@ -141,7 +143,7 @@ impl EncodeContext {
         for col_idx in 0..table_schema.num_columns() {
             let col_schema = table_schema.column(col_idx);
             let col_iter = self.row_group.iter_column(col_idx).map(|v| v.as_view());
-            let enc = ColumnarEncoder::new(col_idx as u32);
+            let enc = ColumnarEncoder::new(col_idx as u32, self.bytes_compress_threshold);
             let mut hint = EncodeHint::new(col_schema.data_type);
             let sz = enc.estimated_encoded_size(col_iter.clone(), &mut hint);
             let mut buf = Vec::with_capacity(sz);
@@ -370,7 +372,10 @@ impl<'a> Writer<'a> {
         self.table_data.metrics.on_write_request_begin();
 
         self.validate_before_write(&request)?;
-        let mut encode_ctx = EncodeContext::new(request.row_group);
+        let mut encode_ctx = EncodeContext::new(
+            request.row_group,
+            self.instance.wal_columns_compress_threshold,
+        );
 
         self.preprocess_write(&mut encode_ctx).await?;
 
@@ -384,6 +389,7 @@ impl<'a> Writer<'a> {
             row_group,
             index_in_writer,
             encoded_cols,
+            ..
         } = encode_ctx;
         let table_data = self.table_data.clone();
 

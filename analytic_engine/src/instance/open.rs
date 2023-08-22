@@ -135,6 +135,8 @@ impl Instance {
             space_write_buffer_size: ctx.config.space_write_buffer_size,
             replay_batch_size: ctx.config.replay_batch_size,
             write_sst_max_buffer_size: ctx.config.write_sst_max_buffer_size.as_byte() as usize,
+            wal_columns_compress_threshold: ctx.config.wal_column_compress_threshold.as_byte()
+                as usize,
             max_retry_flush_limit: ctx.config.max_retry_flush_limit,
             max_bytes_per_write_batch: ctx
                 .config
