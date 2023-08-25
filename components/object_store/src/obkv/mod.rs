@@ -42,7 +42,8 @@ use tokio::{
 use twox_hash::XxHash64;
 use upstream::{
     path::{Path, DELIMITER},
-    Error as StoreError, GetResult, ListResult, MultipartId, ObjectMeta, ObjectStore, Result,
+    Error as StoreError, GetOptions, GetResult, GetResultPayload, ListResult, MultipartId,
+    ObjectMeta, ObjectStore, Result,
 };
 use uuid::Uuid;
 
@@ -313,7 +314,18 @@ impl<T: TableKv> ObkvObjectStore<T> {
 
         let boxed = futures.boxed();
 
-        Ok(GetResult::Stream(boxed))
+        let payload = GetResultPayload::Stream(boxed);
+        let object_meta = ObjectMeta {
+            location: location.clone(),
+            last_modified: DateTime::<Utc>::MAX_UTC,
+            size: 0,
+            e_tag: None,
+        };
+        Ok(GetResult {
+            payload,
+            meta: object_meta,
+            range: (0..1),
+        })
     }
 
     fn convert_datetime(&self, timestamp: i64) -> std::result::Result<DateTime<Utc>, Error> {
@@ -458,6 +470,10 @@ impl<T: TableKv> ObjectStore for ObkvObjectStore<T> {
         })
     }
 
+    async fn get_opts(&self, _location: &Path, _options: GetOptions) -> Result<GetResult> {
+        unimplemented!();
+    }
+
     async fn get_range(&self, location: &Path, range: Range<usize>) -> Result<Bytes> {
         let instant = Instant::now();
 
@@ -566,6 +582,7 @@ impl<T: TableKv> ObjectStore for ObkvObjectStore<T> {
             location: (*location).clone(),
             last_modified,
             size: meta.size,
+            e_tag: None,
         })
     }
 
@@ -636,6 +653,7 @@ impl<T: TableKv> ObjectStore for ObkvObjectStore<T> {
                 location: Path::from(meta.location),
                 last_modified: Utc.timestamp_millis_opt(meta.last_modified).unwrap(),
                 size: meta.size,
+                e_tag: None,
             }));
         }
 
@@ -678,6 +696,7 @@ impl<T: TableKv> ObjectStore for ObkvObjectStore<T> {
                     location: Path::from(location),
                     last_modified: Utc.timestamp_millis_opt(meta.last_modified).unwrap(),
                     size: meta.size,
+                    e_tag: None,
                 })
             }
         }

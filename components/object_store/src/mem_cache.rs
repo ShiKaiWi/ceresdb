@@ -33,7 +33,7 @@ use partitioned_lock::PartitionedMutex;
 use snafu::{OptionExt, Snafu};
 use tokio::io::AsyncWrite;
 use upstream::{
-    path::Path, GetResult, ListResult, MultipartId, ObjectMeta, ObjectStore,
+    path::Path, GetOptions, GetResult, ListResult, MultipartId, ObjectMeta, ObjectStore,
     Result as ObjectStoreResult,
 };
 
@@ -237,6 +237,14 @@ impl ObjectStore for MemCacheStore {
     // 2. In sst module, we only use get_range, get is not used
     async fn get(&self, location: &Path) -> ObjectStoreResult<GetResult> {
         self.underlying_store.get(location).await
+    }
+
+    async fn get_opts(
+        &self,
+        _location: &Path,
+        _options: GetOptions,
+    ) -> ObjectStoreResult<GetResult> {
+        unimplemented!();
     }
 
     async fn get_range(&self, location: &Path, range: Range<usize>) -> ObjectStoreResult<Bytes> {

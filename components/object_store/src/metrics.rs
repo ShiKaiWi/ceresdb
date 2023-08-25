@@ -24,8 +24,8 @@ use prometheus_static_metric::make_static_metric;
 use runtime::Runtime;
 use tokio::io::AsyncWrite;
 use upstream::{
-    path::Path, Error as StoreError, GetResult, ListResult, MultipartId, ObjectMeta, ObjectStore,
-    Result,
+    path::Path, Error as StoreError, GetOptions, GetResult, ListResult, MultipartId, ObjectMeta,
+    ObjectStore, Result,
 };
 
 use crate::ObjectStoreRef;
@@ -163,6 +163,10 @@ impl ObjectStore for StoreWithMetrics {
                 store: METRICS,
                 source: Box::new(source),
             })?
+    }
+
+    async fn get_opts(&self, _location: &Path, _options: GetOptions) -> Result<GetResult> {
+        unimplemented!();
     }
 
     async fn get_range(&self, location: &Path, range: Range<usize>) -> Result<Bytes> {

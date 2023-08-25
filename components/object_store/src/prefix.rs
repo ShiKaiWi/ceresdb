@@ -20,7 +20,8 @@ use futures::{stream::BoxStream, StreamExt};
 use tokio::io::AsyncWrite;
 use upstream::{
     path::{self, Path, DELIMITER},
-    Error, GetResult, ListResult, MultipartId, ObjectMeta, ObjectStore, Result,
+    Error, GetOptions, GetResult, GetResultPayload, ListResult, MultipartId, ObjectMeta,
+    ObjectStore, Result,
 };
 
 use crate::ObjectStoreRef;
@@ -114,7 +115,7 @@ impl ObjectStore for StoreWithPrefix {
     async fn get(&self, location: &Path) -> Result<GetResult> {
         let new_loc = self.add_prefix_to_loc(location);
         let res = self.store.get(&new_loc).await?;
-        if let GetResult::File(_, _) = &res {
+        if let GetResultPayload::File(_, _) = &res.payload {
             let err = ErrorWithMsg {
                 msg: "StoreWithPrefix doesn't support object store based on local file system"
                     .to_string(),
@@ -125,6 +126,10 @@ impl ObjectStore for StoreWithPrefix {
         }
 
         Ok(res)
+    }
+
+    async fn get_opts(&self, _location: &Path, _options: GetOptions) -> Result<GetResult> {
+        unimplemented!();
     }
 
     async fn get_range(&self, location: &Path, range: Range<usize>) -> Result<Bytes> {
@@ -264,6 +269,10 @@ mod tests {
             Err(Error::NotImplemented)
         }
 
+        async fn get_opts(&self, _location: &Path, _options: GetOptions) -> Result<GetResult> {
+            unimplemented!();
+        }
+
         async fn get_range(&self, location: &Path, _range: Range<usize>) -> Result<Bytes> {
             self.prefix_checker.check(location);
             Ok(self.content.clone())
@@ -276,6 +285,7 @@ mod tests {
                 location: location.clone(),
                 last_modified: DateTime::<Utc>::default(),
                 size: 0,
+                e_tag: None,
             })
         }
 

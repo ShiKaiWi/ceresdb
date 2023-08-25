@@ -38,8 +38,8 @@ use tokio::{
     io::{AsyncReadExt, AsyncSeekExt, AsyncWrite, AsyncWriteExt},
 };
 use upstream::{
-    path::Path, Error as ObjectStoreError, GetResult, ListResult, MultipartId, ObjectMeta,
-    ObjectStore, Result,
+    path::Path, Error as ObjectStoreError, GetOptions, GetResult, ListResult, MultipartId,
+    ObjectMeta, ObjectStore, Result,
 };
 
 const FILE_SIZE_CACHE_CAP: usize = 1 << 18;
@@ -655,6 +655,10 @@ impl ObjectStore for DiskCacheStore {
         self.underlying_store.get(location).await
     }
 
+    async fn get_opts(&self, _location: &Path, _options: GetOptions) -> Result<GetResult> {
+        unimplemented!();
+    }
+
     async fn get_range(&self, location: &Path, range: Range<usize>) -> Result<Bytes> {
         let PageRangeResult {
             aligned_start,
@@ -774,6 +778,7 @@ impl ObjectStore for DiskCacheStore {
             location: location.clone(),
             last_modified: file_meta.last_modified,
             size: file_meta.size,
+            e_tag: None,
         })
     }
 

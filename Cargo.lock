@@ -4378,33 +4378,6 @@ dependencies = [
 
 [[package]]
 name = "object_store"
-version = "0.5.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec9cd6ca25e796a49fa242876d1c4de36a24a6da5258e9f0bc062dbf5e81c53b"
-dependencies = [
- "async-trait",
- "base64 0.21.0",
- "bytes",
- "chrono",
- "futures 0.3.28",
- "itertools 0.10.5",
- "parking_lot 0.12.1",
- "percent-encoding",
- "quick-xml 0.28.2",
- "rand 0.8.5",
- "reqwest",
- "ring",
- "serde",
- "serde_json",
- "snafu 0.7.4",
- "tokio",
- "tracing",
- "url",
- "walkdir",
-]
-
-[[package]]
-name = "object_store"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c776db4f332b571958444982ff641d2531417a326ca368995073b639205d58"
@@ -4417,6 +4390,35 @@ dependencies = [
  "itertools 0.10.5",
  "parking_lot 0.12.1",
  "percent-encoding",
+ "snafu 0.7.4",
+ "tokio",
+ "tracing",
+ "url",
+ "walkdir",
+]
+
+[[package]]
+name = "object_store"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d359e231e5451f4f9fa889d56e3ce34f8724f1a61db2107739359717cf2bbf08"
+dependencies = [
+ "async-trait",
+ "base64 0.21.0",
+ "bytes",
+ "chrono",
+ "futures 0.3.28",
+ "humantime 2.1.0",
+ "hyper",
+ "itertools 0.10.5",
+ "parking_lot 0.12.1",
+ "percent-encoding",
+ "quick-xml 0.28.2",
+ "rand 0.8.5",
+ "reqwest",
+ "ring",
+ "serde",
+ "serde_json",
  "snafu 0.7.4",
  "tokio",
  "tracing",
@@ -4441,7 +4443,7 @@ dependencies = [
  "log",
  "lru 0.7.8",
  "macros",
- "object_store 0.5.6",
+ "object_store 0.7.0",
  "partitioned_lock",
  "prometheus 0.12.0",
  "prometheus-static-metric",
@@ -7544,7 +7546,7 @@ version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
- "cfg-if 0.1.10",
+ "cfg-if 1.0.0",
  "rand 0.8.5",
  "static_assertions",
 ]
