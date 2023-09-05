@@ -31,7 +31,13 @@ pub struct PartitionRuleFactory;
 impl PartitionRuleFactory {
     pub fn create(partition_info: PartitionInfo, schema: &Schema) -> Result<PartitionRuleRef> {
         match partition_info {
-            PartitionInfo::Key(key_info) => Self::create_key_rule(key_info, schema),
+            PartitionInfo::Key(key_info) => {
+                let random_info = RandomPartitionInfo {
+                    version: key_info.version,
+                    definitions: key_info.definitions,
+                };
+                Self::create_random_rule(random_info)
+            }
             PartitionInfo::Random(random_info) => Self::create_random_rule(random_info),
             _ => BuildPartitionRule {
                 msg: format!("unsupported partition strategy, strategy:{partition_info:?}"),
