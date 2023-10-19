@@ -17,6 +17,7 @@
 pub mod columnar;
 pub mod factory;
 pub mod key;
+pub mod layered;
 mod reversed_iter;
 pub mod skiplist;
 
@@ -138,6 +139,12 @@ pub enum Error {
 
     #[snafu(display("Timestamp is not found in row.\nBacktrace:\n{backtrace}"))]
     TimestampNotFound { backtrace: Backtrace },
+
+    #[snafu(display("Factory err, msg:{msg}, err:{source}"))]
+    Factory { msg: String, source: GenericError },
+
+    #[snafu(display("Factory err, msg:{msg}.\nBacktrace:\n{backtrace}"))]
+    FactoryNoCause { msg: String, backtrace: Backtrace },
 }
 
 define_result!(Error);
@@ -197,6 +204,7 @@ pub struct ScanRequest {
     pub reverse: bool,
     /// Collector for scan metrics.
     pub metrics_collector: Option<MetricsCollector>,
+    pub time_range: TimeRange,
 }
 
 /// In memory storage for table's data.
@@ -266,7 +274,7 @@ pub trait MemTable {
     fn metrics(&self) -> Metrics;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Metrics {
     /// Size of original rows.
     pub row_raw_size: usize,
