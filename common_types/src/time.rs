@@ -300,6 +300,14 @@ impl TimeRange {
             self.exclusive_end.min(other.exclusive_end),
         )
     }
+
+    #[inline]
+    pub fn union(&self, other: TimeRange) -> TimeRange {
+        TimeRange::new_unchecked(
+            self.inclusive_start.min(other.inclusive_start),
+            self.exclusive_end.max(other.exclusive_end),
+        )
+    }
 }
 
 impl From<TimeRange> for time_range::TimeRange {

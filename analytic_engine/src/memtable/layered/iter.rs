@@ -12,32 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Skiplist memtable iterator
+//! Layered memtable iterator
 
-use std::{cmp::Ordering, iter, ops::Bound, time::Instant};
-
-use arena::{Arena, BasicStats};
-use bytes_ext::{Bytes, BytesMut};
-use ceresdbproto::time_range;
-use codec::row;
-use common_types::{
-    projected_schema::{ProjectedSchema, RowProjector},
-    record_batch::{RecordBatchWithKey, RecordBatchWithKeyBuilder},
-    row::contiguous::{ContiguousRowReader, ProjectedContiguousRow},
-    schema::Schema,
-    time::TimeRange,
-    SequenceNumber,
-};
-use logger::trace;
-use skiplist::{ArenaSlice, BytewiseComparator, IterRef, Skiplist};
-use snafu::ResultExt;
+use common_types::{record_batch::RecordBatchWithKey, time::TimeRange};
 
 use crate::memtable::{
-    key::{self, KeySequence},
     layered::{ImmutableSegment, MutableSegment},
-    skiplist::SkiplistMemTable,
-    AppendRow, BuildRecordBatch, ColumnarIterPtr, DecodeContinuousRow, DecodeInternalKey,
-    EncodeInternalKey, IterTimeout, ProjectSchema, Result, ScanContext, ScanRequest,
+    ColumnarIterPtr, Result, ScanContext, ScanRequest,
 };
 
 /// Columnar iterator for [LayeredMemTable]

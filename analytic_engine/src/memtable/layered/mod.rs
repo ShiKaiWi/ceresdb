@@ -18,38 +18,30 @@ pub mod factory;
 pub mod iter;
 
 use std::{
-    fmt::format,
     mem,
     ops::{Bound, Deref},
     sync::{
-        atomic::{self, AtomicI64, AtomicU64, AtomicUsize},
-        Arc, RwLock,
+        atomic::{self, AtomicU64, AtomicUsize},
+        RwLock,
     },
 };
 
-use arena::{Arena, BasicStats, CollectorRef};
+use arena::CollectorRef;
 use bytes_ext::Bytes;
-use codec::Encoder;
 use common_types::{
-    projected_schema::ProjectedSchema,
-    record_batch::RecordBatchWithKey,
-    row::{contiguous::ContiguousRowWriter, Row},
-    schema::Schema,
-    time::TimeRange,
-    SequenceNumber,
+    projected_schema::ProjectedSchema, record_batch::RecordBatchWithKey, row::Row, schema::Schema,
+    time::TimeRange, SequenceNumber,
 };
 use generic_error::BoxError;
-use logger::{debug, trace};
-use skiplist::{BytewiseComparator, KeyComparator, Skiplist};
-use snafu::{ensure, OptionExt, ResultExt};
+use skiplist::{BytewiseComparator, KeyComparator};
+use snafu::{OptionExt, ResultExt};
 
 use crate::memtable::{
-    factory::{Factory, FactoryRef, Options},
-    key::{ComparableInternalKey, KeySequence},
+    factory::{FactoryRef, Options},
+    key::KeySequence,
     layered::iter::ColumnarIterImpl,
-    ColumnarIterPtr, EncodeInternalKey, Internal, InternalNoCause, InvalidPutSequence, InvalidRow,
-    MemTable, MemTableRef, Metrics as MemtableMetrics, PutContext, Result, ScanContext,
-    ScanRequest, TimestampNotFound,
+    ColumnarIterPtr, Internal, InternalNoCause, MemTable, MemTableRef, Metrics as MemtableMetrics,
+    PutContext, Result, ScanContext, ScanRequest,
 };
 
 #[derive(Default, Debug)]
@@ -134,9 +126,10 @@ impl MemTable for LayeredMemTable {
     }
 
     fn set_last_sequence(&self, sequence: SequenceNumber) -> Result<()> {
-        Ok(self
-            .last_sequence
-            .store(sequence, atomic::Ordering::Relaxed))
+        self.last_sequence
+            .store(sequence, atomic::Ordering::Relaxed);
+
+        Ok(())
     }
 
     fn last_sequence(&self) -> SequenceNumber {
@@ -154,7 +147,7 @@ impl MemTable for LayeredMemTable {
     }
 }
 
-/// Layered memtable inner
+/// The inner data structure of [`LayeredMemTable`].
 struct Inner {
     mutable_segment_builder: MutableSegmentBuilder,
     mutable_segment: MutableSegment,
@@ -225,6 +218,7 @@ impl Inner {
             time_range: TimeRange::min_to_max(),
         };
 
+        // TODO: do such conversion during the first read.
         let immutable_batches = current_mutable
             .scan(scan_ctx, scan_req)?
             .collect::<Result<Vec<_>>>()?;
@@ -247,85 +241,91 @@ impl Inner {
     pub fn min_key(&self) -> Option<Bytes> {
         let comparator = BytewiseComparator;
 
-        let mut mutable_min_key = self.mutable_segment.min_key();
-
+        let mutable_min_key = self.mutable_segment.min_key();
         let immutable_min_key = if self.immutable_segments.is_empty() {
-            None
+            return mutable_min_key;
         } else {
-            let mut min_key = self.immutable_segments.first().unwrap().min_key();
             let mut imm_iter = self.immutable_segments.iter();
-            let _ = imm_iter.next();
+            // At least one immutable memtable must exist.
+            let mut min_key = imm_iter.next().unwrap().min_key();
             for imm in imm_iter {
-                match comparator.compare_key(&min_key, &imm.min_key) {
-                    std::cmp::Ordering::Greater => min_key = imm.min_key(),
-                    std::cmp::Ordering::Less | std::cmp::Ordering::Equal => (),
+                if comparator.compare_key(&min_key, &imm.min_key).is_gt() {
+                    min_key = imm.min_key();
                 }
             }
 
-            Some(min_key)
+            min_key
         };
 
-        match (mutable_min_key, immutable_min_key) {
-            (None, None) => None,
-            (None, Some(key)) | (Some(key), None) => Some(key),
-            (Some(key1), Some(key2)) => Some(match comparator.compare_key(&key1, &key2) {
-                std::cmp::Ordering::Greater => key2,
-                std::cmp::Ordering::Less | std::cmp::Ordering::Equal => key1,
-            }),
-        }
+        let min_key = match mutable_min_key {
+            None => immutable_min_key,
+            Some(mutable_min_key) => {
+                if comparator
+                    .compare_key(&mutable_min_key, &immutable_min_key)
+                    .is_le()
+                {
+                    mutable_min_key
+                } else {
+                    immutable_min_key
+                }
+            }
+        };
+
+        Some(min_key)
     }
 
     pub fn max_key(&self) -> Option<Bytes> {
         let comparator = BytewiseComparator;
 
-        let mut mutable_max_key = self.mutable_segment.max_key();
-
+        let mutable_max_key = self.mutable_segment.max_key();
         let immutable_max_key = if self.immutable_segments.is_empty() {
-            None
+            return mutable_max_key;
         } else {
-            let mut max_key = self.immutable_segments.first().unwrap().max_key();
             let mut imm_iter = self.immutable_segments.iter();
-            let _ = imm_iter.next();
+            // At least one immutable memtable must exist.
+            let mut max_key = imm_iter.next().unwrap().max_key();
             for imm in imm_iter {
-                match comparator.compare_key(&max_key, &imm.max_key) {
-                    std::cmp::Ordering::Less => max_key = imm.max_key(),
-                    std::cmp::Ordering::Greater | std::cmp::Ordering::Equal => (),
+                if comparator.compare_key(&max_key, &imm.max_key).is_lt() {
+                    max_key = imm.max_key();
                 }
             }
 
-            Some(max_key)
+            max_key
         };
 
-        match (mutable_max_key, immutable_max_key) {
-            (None, None) => None,
-            (None, Some(key)) | (Some(key), None) => Some(key),
-            (Some(key1), Some(key2)) => Some(match comparator.compare_key(&key1, &key2) {
-                std::cmp::Ordering::Less => key2,
-                std::cmp::Ordering::Greater | std::cmp::Ordering::Equal => key1,
-            }),
-        }
+        let max_key = match mutable_max_key {
+            None => immutable_max_key,
+            Some(mutable_max_key) => {
+                if comparator
+                    .compare_key(&mutable_max_key, &immutable_max_key)
+                    .is_gt()
+                {
+                    mutable_max_key
+                } else {
+                    immutable_max_key
+                }
+            }
+        };
+        Some(max_key)
     }
 
     pub fn time_range(&self) -> Option<TimeRange> {
         let mutable_time_range = self.mutable_segment.time_range();
-
         let immutable_time_range = if self.immutable_segments.is_empty() {
-            None
+            return mutable_time_range;
         } else {
-            let mut time_range = self.immutable_segments.first().unwrap().time_range();
             let mut imm_iter = self.immutable_segments.iter();
-            let _ = imm_iter.next();
+            let mut time_range = imm_iter.next().unwrap().time_range();
             for imm in imm_iter {
-                time_range = time_range.intersected_range(imm.time_range()).unwrap();
+                time_range = time_range.union(imm.time_range());
             }
 
-            Some(time_range)
+            time_range
         };
 
-        match (mutable_time_range, immutable_time_range) {
-            (None, None) => None,
-            (None, Some(range)) | (Some(range), None) => Some(range),
-            (Some(range1), Some(range2)) => Some(range1.intersected_range(range2).unwrap()),
+        match mutable_time_range {
+            None => Some(immutable_time_range),
+            Some(mutable_time_range) => Some(mutable_time_range.union(immutable_time_range)),
         }
     }
 
@@ -342,7 +342,9 @@ impl Inner {
     }
 }
 
-/// Mutable batch
+/// Mutable segment for storing the newly written rows.
+///
+/// It will be converted to [`ImmutableSegment`] when some requirements are met.
 pub(crate) struct MutableSegment(MemTableRef);
 
 impl Deref for MutableSegment {
@@ -353,7 +355,7 @@ impl Deref for MutableSegment {
     }
 }
 
-/// Builder for `MutableBatch`
+/// Builder for [`MutableSegment`]
 struct MutableSegmentBuilder {
     memtable_factory: FactoryRef,
     opts: MutableBuilderOptions,
@@ -398,20 +400,21 @@ struct MutableBuilderOptions {
     pub collector: CollectorRef,
 }
 
-/// Immutable batch
+/// Immutable segment for storing the read-only record batches.
 pub(crate) struct ImmutableSegment {
-    /// Record batch converted from `MutableBatch`    
+    /// The record batch converted from raw rows in the [`MutableSegment`]
     record_batches: Vec<RecordBatchWithKey>,
 
-    /// Min time of source `MutableBatch`
+    /// The time range of the record batches
     time_range: TimeRange,
 
-    /// Min key of source `MutableBatch`
+    /// The min key of the record batches
     min_key: Bytes,
 
-    /// Max key of source `MutableBatch`
+    /// The max key of the record batches
     max_key: Bytes,
 
+    /// The memory usage of the record batches
     approximate_memory_size: usize,
 }
 
@@ -436,23 +439,27 @@ impl ImmutableSegment {
         }
     }
 
+    #[inline]
     pub fn time_range(&self) -> TimeRange {
         self.time_range
     }
 
+    #[inline]
     pub fn min_key(&self) -> Bytes {
         self.min_key.clone()
     }
 
+    #[inline]
     pub fn max_key(&self) -> Bytes {
         self.max_key.clone()
     }
 
-    // TODO: maybe return a iterator?
+    #[inline]
     pub fn record_batches(&self) -> &[RecordBatchWithKey] {
         &self.record_batches
     }
 
+    #[inline]
     pub fn approximate_memory_usage(&self) -> usize {
         self.approximate_memory_size
     }
