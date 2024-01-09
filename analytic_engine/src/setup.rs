@@ -255,9 +255,16 @@ fn open_storage(
                 )
                 .context(OpenMemCache)?,
             );
-            let default_store = Arc::new(MemCacheStore::new(mem_cache.clone(), store.clone())) as _;
-            let store_with_readonly_cache =
-                Arc::new(MemCacheStore::new_with_readonly_cache(mem_cache, store)) as _;
+            let default_store = Arc::new(MemCacheStore::new(
+                mem_cache.clone(),
+                store.clone(),
+                opts.mem_cache_prefix_paths.clone(),
+            )) as _;
+            let store_with_readonly_cache = Arc::new(MemCacheStore::new_with_readonly_cache(
+                mem_cache,
+                store,
+                opts.mem_cache_prefix_paths.clone(),
+            )) as _;
             Ok(OpenedStorages {
                 default_store,
                 store_with_readonly_cache,

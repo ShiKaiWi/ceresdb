@@ -136,6 +136,7 @@ impl Display for MemCache {
 /// for the loaded data. BTW, all the accesses are forced to the order:
 /// `cache` -> `underlying_store`.
 pub struct MemCacheStore {
+    prefixes: Vec<String>,
     cache: MemCacheRef,
     underlying_store: ObjectStoreRef,
     readonly_cache: bool,
@@ -143,21 +144,37 @@ pub struct MemCacheStore {
 
 impl MemCacheStore {
     /// Create a default [`MemCacheStore`].
-    pub fn new(cache: MemCacheRef, underlying_store: ObjectStoreRef) -> Self {
+    pub fn new(
+        cache: MemCacheRef,
+        underlying_store: ObjectStoreRef,
+        prefixes: Vec<String>,
+    ) -> Self {
         Self {
             cache,
             underlying_store,
             readonly_cache: false,
+            prefixes,
         }
     }
 
     /// Create a [`MemCacheStore`] with a readonly cache.
-    pub fn new_with_readonly_cache(cache: MemCacheRef, underlying_store: ObjectStoreRef) -> Self {
+    pub fn new_with_readonly_cache(
+        cache: MemCacheRef,
+        underlying_store: ObjectStoreRef,
+        prefixes: Vec<String>,
+    ) -> Self {
         Self {
             cache,
             underlying_store,
             readonly_cache: true,
+            prefixes,
         }
+    }
+
+    #[inline]
+    fn is_cached_path(&self, path: &Path) -> bool {
+        let s: &str = path.as_ref();
+        self.prefixes.iter().any(|prefix| s.starts_with(prefix))
     }
 
     fn cache_key(location: &Path, range: &Range<usize>) -> String {
@@ -245,6 +262,10 @@ impl ObjectStore for MemCacheStore {
     }
 
     async fn get_range(&self, location: &Path, range: Range<usize>) -> ObjectStoreResult<Bytes> {
+        if !self.is_cached_path(location) {
+            return self.underlying_store.get_range(location, range).await;
+        }
+
         if self.readonly_cache {
             self.get_range_with_ro_cache(location, range).await
         } else {

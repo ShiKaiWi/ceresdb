@@ -26,6 +26,7 @@ pub struct StorageOptions {
     // 0 means disable mem cache
     pub mem_cache_capacity: ReadableSize,
     pub mem_cache_partition_bits: usize,
+    pub mem_cache_prefix_paths: Vec<String>,
     // 0 means disable disk cache
     // Note: disk_cache_capacity % (disk_cache_page_size * (1 << disk_cache_partition_bits)) should
     // be 0
@@ -43,6 +44,7 @@ impl Default for StorageOptions {
         StorageOptions {
             mem_cache_capacity: ReadableSize::mb(512),
             mem_cache_partition_bits: 6,
+            mem_cache_prefix_paths: vec![],
             disk_cache_dir: root_path.clone(),
             disk_cache_capacity: ReadableSize::gb(0),
             disk_cache_page_size: ReadableSize::mb(2),
