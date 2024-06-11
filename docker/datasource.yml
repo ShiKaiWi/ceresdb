@@ -15,11 +15,17 @@
 # specific language governing permissions and limitations
 # under the License.
 
-headerPath = "Apache-2.0-ASF.txt"
+apiVersion: 1
 
-excludes = [
-    # Derived
-    "server/service/http/route.go",
-    "server/coordinator/scheduler/nodepicker/hash/consistent_uniform_test.go",
-    "server/coordinator/scheduler/nodepicker/hash/consistent_uniform.go",
-]
+datasources:
+  - name: HoraeDB-mysql
+    type: mysql
+    access: proxy
+    url: localhost:3307
+    isDefault: true
+
+  - name: HoraeDB-influxdb
+    type: influxdb
+    access: proxy
+    url: http://localhost:5440/influxdb/v1/
+    isDefault: false

@@ -15,20 +15,37 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Utilities for benchmarks.
+use thiserror::Error;
 
-use common_types::SequenceNumber;
+use crate::ErrorKind;
 
-pub mod config;
-pub mod merge_memtable_bench;
-pub mod merge_sst_bench;
-pub mod parquet_bench;
-pub mod replay_bench;
-pub mod scan_memtable_bench;
-pub mod sst_bench;
-pub mod sst_tools;
-pub mod table;
-pub mod util;
-pub mod wal_write_bench;
+#[derive(Debug, Error)]
+#[error(transparent)]
+pub struct Error(#[from] InnerError);
 
-pub(crate) const INIT_SEQUENCE: SequenceNumber = 1;
+impl From<anyhow::Error> for Error {
+    fn from(source: anyhow::Error) -> Self {
+        Self(InnerError::Other { source })
+    }
+}
+
+impl Error {
+    pub fn kind(&self) -> ErrorKind {
+        match self.0 {
+            InnerError::KeyTooLarge { .. } => ErrorKind::KeyTooLarge,
+            InnerError::Other { .. } => ErrorKind::Internal,
+        }
+    }
+}
+
+#[derive(Error, Debug)]
+pub(crate) enum InnerError {
+    #[error("too large key, max:{max}, current:{current}")]
+    KeyTooLarge { current: usize, max: usize },
+
+    #[error(transparent)]
+    Other {
+        #[from]
+        source: anyhow::Error,
+    },
+}

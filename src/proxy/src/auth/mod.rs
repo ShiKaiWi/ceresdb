@@ -15,20 +15,23 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Utilities for benchmarks.
+use serde::{Deserialize, Serialize};
 
-use common_types::SequenceNumber;
+pub mod with_file;
 
-pub mod config;
-pub mod merge_memtable_bench;
-pub mod merge_sst_bench;
-pub mod parquet_bench;
-pub mod replay_bench;
-pub mod scan_memtable_bench;
-pub mod sst_bench;
-pub mod sst_tools;
-pub mod table;
-pub mod util;
-pub mod wal_write_bench;
+/// Header of authorization
+pub const AUTHORIZATION: &str = "authorization";
 
-pub(crate) const INIT_SEQUENCE: SequenceNumber = 1;
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub enum AuthType {
+    #[default]
+    #[serde(rename = "file")]
+    File,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct Config {
+    pub enable: bool,
+    pub auth_type: AuthType,
+    pub source: String,
+}

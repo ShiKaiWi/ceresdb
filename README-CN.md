@@ -3,11 +3,12 @@
 ![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)
 [![CI](https://github.com/apache/incubator-horaedb/actions/workflows/ci.yml/badge.svg)](https://github.com/apache/incubator-horaedb/actions/workflows/ci.yml)
 [![OpenIssue](https://img.shields.io/github/issues/apache/incubator-horaedb)](https://github.com/apache/incubator-horaedb/issues)
-<!-- [![Docker](https://img.shields.io/docker/v/apache/horaedb-server?logo=docker)](https://hub.docker.com/r/apache/horaedb-server) TODO need to wait for first apache version release. --> 
+[![HoraeDB Docker](https://img.shields.io/docker/v/apache/horaedb-server?logo=docker&label=horaedb-server)](https://hub.docker.com/r/apache/horaedb-server)
+[![HoraeMeta Docker](https://img.shields.io/docker/v/apache/horaemeta-server?logo=docker&label=horaemeta-server)](https://hub.docker.com/r/apache/horaemeta-server)
 
 [English](./README.md)
 
-HoraeDB 是一款高性能、分布式的云原生时序数据库。
+Apache HoraeDB (incubating) 是一款高性能、分布式的云原生时序数据库。
 
 ## 文档
 - [用户文档](https://horaedb.apache.org)
@@ -77,22 +78,21 @@ Drop TABLE `demo`
 '
 ```
 
-## 如何贡献
+## 开发者社区
 
-[订阅邮箱参与讨论](mailto:dev-subscribe@horaedb.apache.org) ([订阅](mailto:dev-subscribe@horaedb.apache.org?subject=(send%20this%20email%20to%20subscribe)) / [取消订阅](mailto:dev-unsubscribe@horaedb.apache.org?subject=(send%20this%20email%20to%20unsubscribe)) / [查看邮件历史记录](https://lists.apache.org/list.html?dev@horaedb.apache.org))
+与来自世界各地的用户和开发人员一起在 Apache HoraeDB (incubating) 社区中茁壮成长。
 
-
-发送 [请求](mailto:dev@horaedb.apache.org?subject=(Request%to%20join%20HoraeDB%20slack)) 至 `dev@horaedb.apache.org` 加入HoraedDB Slack
+- [订阅邮箱参与讨论](mailto:dev-subscribe@horaedb.apache.org) ([订阅](mailto:dev-subscribe@horaedb.apache.org?subject=(send%20this%20email%20to%20subscribe)) / [取消订阅](mailto:dev-unsubscribe@horaedb.apache.org?subject=(send%20this%20email%20to%20unsubscribe)) / [查看邮件历史记录](https://lists.apache.org/list.html?dev@horaedb.apache.org))
+- 发送 [请求](mailto:dev@horaedb.apache.org?subject=(Request%to%20join%20HoraeDB%20slack)) 至 `dev@horaedb.apache.org` 加入HoraeDB Slack
+- 通过[这里的链接](https://github.com/apache/incubator-horaedb-docs/blob/main/static/dingtalk.jpg)，加入钉钉用户群
 
 [约定式提交](https://apache.github.io/incubator-horaedb-docs/cn/dev/conventional_commit)
 
-[如何参与 HoraeDB 代码贡献](CONTRIBUTING.md)
-
+[如何参与贡献](CONTRIBUTING.md)
 
 ## 致谢
-在开发 HoraeDB 的过程中， 我们受到很多开源项目的影响和启发，例如  [influxdb_iox](https://github.com/influxdata/influxdb/tree/main), [tikv](https://github.com/tikv/tikv) 等等。感谢这些杰出的项目。
 
-在生产环境中，我们重度使用 [OceanBase](https://github.com/oceanbase/oceanbase) 作为 WAL 和 ObjectStore 的实现，而且 OceanBase 团队还帮助我们一起维护集群的稳定，感谢 OceanBase 团队一直以来的帮助。
+在开发程中，我们受到很多开源项目的影响和启发，例如 [influxdb_iox](https://github.com/influxdata/influxdb/tree/main), [tikv](https://github.com/tikv/tikv) 等等，感谢这些杰出的项目。
 
 ## 开源许可
-HoraeDB 基于 [Apache License 2.0](LICENSE) 协议。
+[Apache License 2.0](./LICENSE)
