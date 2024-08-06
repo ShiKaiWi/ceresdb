@@ -185,10 +185,12 @@ impl Bucket {
 
     fn with_files(files: Vec<FileHandle>) -> Self {
         let total: usize = files.iter().map(|f| f.size() as usize).sum();
-        Self {
-            avg_size: total / files.len(),
-            files,
-        }
+        let avg_size = if files.is_empty() {
+            0
+        } else {
+            total / files.len()
+        };
+        Self { avg_size, files }
     }
 
     fn insert_file(&mut self, file: &FileHandle) {
