@@ -36,6 +36,12 @@ const (
 	AllocClusterIDPrefix = "ClusterID"
 )
 
+type ctxKey int
+
+const (
+	AllowDropNoShardTable ctxKey = 0
+)
+
 type Manager interface {
 	// Start must be called before manager is used.
 	Start(ctx context.Context) error
@@ -323,7 +329,16 @@ func (m *managerImpl) DropTable(ctx context.Context, clusterName, schemaName, ta
 	}
 
 	if _, ok := getShardNodeResult.ShardNodes[table.ID]; !ok {
-		return metadata.ErrShardNotFound
+		allowDropNoShardTable := ctx.Value(AllowDropNoShardTable).(bool)
+		if !allowDropNoShardTable {
+			return metadata.ErrShardNotFound
+		}
+
+		_, err = cluster.metadata.DropTableMetadata(ctx, schemaName, tableName)
+		if err != nil {
+			return errors.WithMessage(err, "cluster drop table metadata")
+		}
+		return nil
 	}
 
 	if len(getShardNodeResult.ShardNodes[table.ID]) != 1 || len(getShardNodeResult.Version) != 1 {

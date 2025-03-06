@@ -211,7 +211,11 @@ func (a *API) dropTable(req *http.Request) apiFuncResult {
 	}
 	log.Info("drop table request", zap.String("request", fmt.Sprintf("%+v", dropTableRequest)))
 
-	if err := a.clusterManager.DropTable(context.Background(), dropTableRequest.ClusterName, dropTableRequest.SchemaName, dropTableRequest.Table); err != nil {
+	ctx := context.Background()
+	if x := req.Header.Values("ALLOW_DROP_NO_SHARD_TABLE"); len(x) != 0 {
+		ctx = context.WithValue(ctx, cluster.AllowDropNoShardTable, true)
+	}
+	if err := a.clusterManager.DropTable(ctx, dropTableRequest.ClusterName, dropTableRequest.SchemaName, dropTableRequest.Table); err != nil {
 		log.Error("drop table failed", zap.Error(err))
 		return errResult(ErrTable, err.Error())
 	}
