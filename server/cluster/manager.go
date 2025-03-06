@@ -329,8 +329,7 @@ func (m *managerImpl) DropTable(ctx context.Context, clusterName, schemaName, ta
 	}
 
 	if _, ok := getShardNodeResult.ShardNodes[table.ID]; !ok {
-		allowDropNoShardTable, ok := ctx.Value(AllowDropNoShardTable).(bool)
-		fmt.Printf("drop table shardNodes, allow_drop: %v, convert_res:%v\n", allowDropNoShardTable, ok)
+		allowDropNoShardTable := ctx.Value(AllowDropNoShardTable).(bool)
 		if !allowDropNoShardTable {
 			return metadata.ErrShardNotFound
 		}
@@ -342,9 +341,17 @@ func (m *managerImpl) DropTable(ctx context.Context, clusterName, schemaName, ta
 		return nil
 	}
 
-	fmt.Printf("drop table shardNodes: %v, shard version: %v\n", getShardNodeResult.ShardNodes[table.ID], getShardNodeResult.Version)
 	if len(getShardNodeResult.ShardNodes[table.ID]) != 1 || len(getShardNodeResult.Version) != 1 {
-		return metadata.ErrShardNotFound
+		allowDropNoShardTable := ctx.Value(AllowDropNoShardTable).(bool)
+		if !allowDropNoShardTable {
+			return metadata.ErrShardNotFound
+		}
+
+		_, err = cluster.metadata.DropTableMetadata(ctx, schemaName, tableName)
+		if err != nil {
+			return errors.WithMessage(err, "cluster drop table metadata")
+		}
+		return nil
 	}
 
 	shardID := getShardNodeResult.ShardNodes[table.ID][0].ID
